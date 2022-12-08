@@ -1,0 +1,154 @@
+name: Test Meltano Pipelines
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+  workflow_dispatch:
+
+jobs:
+  airflow_tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: data/
+    environment: test
+    env:
+      MELTANO_ENVIRONMENT: cicd
+      MELTANO_SEND_ANONYMOUS_USAGE_STATS: 'false'
+      CI_BRANCH: 'b${{ github.SHA }}'
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+    - run: pip install -r requirements.txt
+    - run: echo "DEFAULT_START_DATE=$(date +'%Y-%m-%d' -d '1 day ago')" >> $GITHUB_ENV
+    - run: echo "${{secrets.MELTANO_ENV_FILE }}" > .env 
+    # Airflow
+    - run: meltano install utility airflow
+    - run: meltano test airflow
+
+  sqlfluff_tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: data/
+    environment: test
+    env:
+      MELTANO_ENVIRONMENT: cicd
+      MELTANO_SEND_ANONYMOUS_USAGE_STATS: 'false'
+      CI_BRANCH: 'b${{ github.SHA }}'
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+    - run: pip install -r requirements.txt
+    - run: echo "DEFAULT_START_DATE=$(date +'%Y-%m-%d' -d '1 day ago')" >> $GITHUB_ENV
+    - run: echo "${{secrets.MELTANO_ENV_FILE }}" > .env 
+    # Run Test
+    - run: meltano install utilities sqlfluff dbt-snowflake
+    - run: meltano run dbt-snowflake:deps sqlfluff:lint
+
+  dbt_seed:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: data/
+    environment: test
+    env:
+      MELTANO_ENVIRONMENT: cicd
+      MELTANO_SEND_ANONYMOUS_USAGE_STATS: 'false'
+      CI_BRANCH: 'b${{ github.SHA }}'
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+    - run: pip install -r requirements.txt
+    - run: echo "DEFAULT_START_DATE=$(date +'%Y-%m-%d' -d '1 day ago')" >> $GITHUB_ENV
+    - run: echo "${{secrets.MELTANO_ENV_FILE }}" > .env
+    # Run Test
+    - run: meltano install utility dbt-snowflake
+    - run: meltano run dbt-snowflake:run_dbt_artifacts dbt-snowflake:seed
+
+  el_tests:
+    runs-on: ubuntu-latest
+    needs: [airflow_tests, sqlfluff_tests, dbt_seed]
+    defaults:
+      run:
+        working-directory: data/
+    environment: test
+    strategy:
+      matrix:
+        extract-source: ['meltanohub_el', 'spreadsheets_anywhere_el', 'github_search_el', 'github_meltano_el', 'gitlab_el', 'slack_el', 'google_analytics_el', 'snowplow_el']
+    env:
+      MELTANO_ENVIRONMENT: cicd
+      MELTANO_SEND_ANONYMOUS_USAGE_STATS: 'false'
+      CI_BRANCH: 'b${{ github.SHA }}'
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+    - run: pip install -r requirements.txt
+    - run: echo "DEFAULT_START_DATE=$(date +'%Y-%m-%d' -d '1 day ago')" >> $GITHUB_ENV
+    - run: echo "${{secrets.MELTANO_ENV_FILE }}" > .env 
+    # Install Plugins
+    - run: eval $(meltano job list --format=json | python ci_get_install_script.py ${{ matrix.extract-source }})
+    # Run Test
+    - run: meltano run ${{ matrix.extract-source }}
+
+  transform_tests:
+    runs-on: ubuntu-latest
+    needs: [el_tests]
+    defaults:
+      run:
+        working-directory: data/
+    environment: test
+    env:
+      MELTANO_ENVIRONMENT: cicd
+      MELTANO_SEND_ANONYMOUS_USAGE_STATS: 'false'
+      CI_BRANCH: 'b${{ github.SHA }}'
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+    - run: pip install -r requirements.txt
+    - run: echo "DEFAULT_START_DATE=$(date +'%Y-%m-%d' -d '1 day ago')" >> $GITHUB_ENV
+    - run: echo "${{secrets.MELTANO_ENV_FILE }}" > .env
+    # Run Test
+    - run: meltano install utility dbt-snowflake
+    - run: meltano run dbt-snowflake:run dbt-snowflake:test
+
+  reverse_el_tests:
+    runs-on: ubuntu-latest
+    needs: [transform_tests]
+    defaults:
+      run:
+        working-directory: data/
+    environment: test
+    env:
+      MELTANO_ENVIRONMENT: cicd
+      MELTANO_SEND_ANONYMOUS_USAGE_STATS: 'false'
+      CI_BRANCH: 'b${{ github.SHA }}'
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+    - run: pip install -r requirements.txt
+    - run: echo "DEFAULT_START_DATE=$(date +'%Y-%m-%d' -d '1 day ago')" >> $GITHUB_ENV
+    - run: echo "${{secrets.MELTANO_ENV_FILE }}" > .env 
+    # Install Plugins
+    - run: eval $(meltano job list --format=json | python ci_get_install_script.py hub_metrics_publish)
+    # Run Test
+    - run: meltano run hub_metrics_publish
