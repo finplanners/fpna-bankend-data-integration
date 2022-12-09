@@ -1,0 +1,44 @@
+version: 1
+default_environment: dev
+project_id: 5b543be8-6ba4-4172-9d13-4d3cd06876d5
+environments:
+- name: dev
+- name: staging
+- name: prod
+plugins:
+  extractors:
+  - name: tap-dynamics
+    variant: dreamdata-io
+    pip_url: git+https://github.com/dreamdata-io/tap-dynamics.git
+    config:
+      redirect_uri: https://dynamics.microsoft.com/en-us/
+  - name: tap-salesforce
+    variant: meltanolabs
+    pip_url: git+https://github.com/meltanolabs/tap-salesforce.git@v1.5.0
+    config:
+      username: venucops09@gmail.com
+      client_id: 3MVG9n_HvETGhr3DbAAArsmewzWH8ebQIsNpVEyKExXwlT_.xfG0VygrK9POlQmGReMrCZKm8hMgJeGK5EERZ
+      start_date: '2019-07-01T00:00:00Z'
+  - name: tap-xero
+    variant: singer-io
+    pip_url: tap-xero
+  loaders:
+  - name: target-csv
+    variant: hotgluexyz
+    pip_url: git+https://github.com/hotgluexyz/target-csv.git
+    config:
+      destination_path: C:\Users
+      delimiter: ','
+  - name: target-gsheet
+    variant: singer-io
+    pip_url: target-gsheet
+  - name: target-jsonl
+    variant: andyh1203
+    pip_url: target-jsonl
+schedules:
+- name: salesforce-to-jsonl
+  interval: '@daily'
+  extractor: tap-salesforce
+  loader: target-jsonl
+  transform: skip
+  start_date: 2019-07-01 00:00:00
